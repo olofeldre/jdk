@@ -753,8 +753,31 @@ jint universe_init() {
     return status;
   }
 
+  // Place to pin gc-threads.
+
+  class MyClosure: public ThreadClosure {
+	  virtual void do_thread(Thread* thread) {
+		 const pthread_t tid = thread->osthread()->thread_id();
+  	
+  	cpu_set_t myset;
+   	CPU_ZERO(&myset);
+   	 for(int cpu = 16; cpu < 24; ++cpu)
+  	  {
+  	    CPU_SET(cpu, &myset);
+  	  }
+  	  sched_setaffinity(tid, sizeof(myset), &myset);
+  	 
+  	}
+  };
+
+  MyClosure my_closure;
+  Universe::heap()->gc_threads_do(&my_closure);
+
   Universe::initialize_tlab();
 
+  Metaspace::global_initialize();
+
+  // Initialize performance counters for metaspaces
   Metaspace::global_initialize();
 
   // Initialize performance counters for metaspaces
@@ -1162,9 +1185,6 @@ void Universe::verify(VerifyOption option, const char* prefix) {
 #ifndef PRODUCT
 void Universe::calculate_verify_data(HeapWord* low_boundary, HeapWord* high_boundary) {
   assert(low_boundary < high_boundary, "bad interval");
-
-  // decide which low-order bits we require to be clear:
-  size_t alignSize = MinObjAlignmentInBytes;
   size_t min_object_size = CollectedHeap::min_fill_size();
 
   // make an inclusive limit:
